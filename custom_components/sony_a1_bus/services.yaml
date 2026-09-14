@@ -1,0 +1,48 @@
+transmit:
+  name: Transmit
+  description: Send a message on the Sony Control-A1 bus
+  fields:
+    device_id:
+      name: Device
+      description: The ESPHome device with the sony_a1_bus component
+      required: true
+      selector:
+        device:
+          integration: sony_a1_bus
+    data:
+      name: Data
+      description: List of bytes (0-255) to send on the bus
+      required: true
+      example: "[18, 52, 86]"
+      selector:
+        object:
+    max_retries:
+      name: Max Retries
+      description: Maximum number of retry attempts if bus is busy
+      required: false
+      default: 0
+      example: "3"
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+
+set_musicbrainz_id:
+  name: Set MusicBrainz ID
+  description: Override the MusicBrainz release ID for the currently loaded disc
+  fields:
+    device_id:
+      name: Device
+      description: The player device
+      required: true
+      selector:
+        device:
+          integration: sony_a1_bus
+    musicbrainz_id:
+      name: MusicBrainz Release ID
+      description: The correct MusicBrainz release ID (UUID)
+      required: true
+      example: "c225674c-3df6-4c02-8b28-c53a2f6472ef"
+      selector:
+        text:

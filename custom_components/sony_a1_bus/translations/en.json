@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sony A1 Bus",
+        "description": "Set up the Sony A1 Bus integration to bridge Control-A1 bus messages from ESPHome devices."
+      }
+    },
+    "abort": {
+      "already_configured": "This integration is already configured."
+    }
+  }
+}
