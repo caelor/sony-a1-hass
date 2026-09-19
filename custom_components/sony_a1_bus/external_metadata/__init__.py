@@ -43,11 +43,14 @@ class MetadataProvider(Protocol):
         """
         ...
 
-    async def async_lookup_by_id(self, source_id: str) -> ExternalMetadata | None:
+    async def async_lookup_by_id(
+        self, source_id: str, toc: list[dict[str, Any]] | None = None
+    ) -> ExternalMetadata | None:
         """Fetch full metadata for a disc by its source-specific ID.
 
         Args:
             source_id: Source-specific identifier (e.g., MBID for MusicBrainz).
+            toc: Optional TOC data for multi-disc matching.
 
         Returns:
             ExternalMetadata object, or None if lookup failed.

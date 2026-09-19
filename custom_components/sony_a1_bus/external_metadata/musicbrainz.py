@@ -152,11 +152,14 @@ class MusicBrainzProvider:
         _LOGGER.debug("No releases with discids found, using first result")
         return release_list[0]
 
-    async def async_lookup_by_id(self, mbid: str) -> ExternalMetadata | None:
+    async def async_lookup_by_id(
+        self, mbid: str, toc: list[dict[str, Any]] | None = None
+    ) -> ExternalMetadata | None:
         """Fetch full release metadata and album art.
 
         Args:
             mbid: MusicBrainz release ID.
+            toc: Optional TOC data for multi-disc matching.
 
         Returns:
             ExternalMetadata object, or None if lookup failed.
@@ -183,7 +186,7 @@ class MusicBrainzProvider:
 
         album_title = release.get("title", "Unknown Album")
         artist = self._extract_artist(release)
-        tracks = self._extract_tracks(release)
+        tracks = self._extract_tracks(release, toc)
 
         album_art_url = await self._async_get_front_cover_url(mbid)
 
@@ -217,31 +220,123 @@ class MusicBrainzProvider:
 
         return "".join(parts) if parts else "Unknown Artist"
 
-    def _extract_tracks(self, release: dict[str, Any]) -> list[TrackMetadata]:
-        """Extract track metadata from release data."""
-        tracks: list[TrackMetadata] = []
+    def _extract_tracks(
+        self, release: dict[str, Any], toc: list[dict[str, Any]] | None = None
+    ) -> list[TrackMetadata]:
+        """Extract track metadata from release data.
 
+        For multi-disc releases, matches the TOC against each medium to find
+        the correct disc's tracks. Falls back to all tracks if no match found.
+
+        Args:
+            release: MusicBrainz release data.
+            toc: Optional TOC data for multi-disc matching.
+
+        Returns:
+            List of TrackMetadata objects.
+        """
         medium_list = release.get("medium-list", [])
         if not medium_list:
-            return tracks
+            return []
+
+        if toc and len(medium_list) > 1:
+            matched_medium = self._match_medium_to_toc(medium_list, toc)
+            if matched_medium:
+                _LOGGER.debug(
+                    "Matched TOC to medium %s of %s",
+                    matched_medium.get("position", "?"),
+                    len(medium_list),
+                )
+                return self._extract_tracks_from_medium(matched_medium)
+
+        all_tracks: list[TrackMetadata] = []
+        for medium in medium_list:
+            all_tracks.extend(self._extract_tracks_from_medium(medium))
+        return all_tracks
+
+    def _match_medium_to_toc(
+        self, medium_list: list[dict[str, Any]], toc: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Find the medium that best matches the TOC.
+
+        Args:
+            medium_list: List of mediums from MusicBrainz.
+            toc: TOC data with track lengths.
+
+        Returns:
+            Matching medium dict, or None if no match found.
+        """
+        toc_lengths = [t["length"] for t in toc]
+        _LOGGER.debug("TOC lengths (seconds): %s", toc_lengths)
+        
+        best_match: dict[str, Any] | None = None
+        best_distance = float("inf")
 
         for medium in medium_list:
             track_list = medium.get("track-list", [])
-            for track in track_list:
-                recording = track.get("recording", {})
-                title = recording.get("title") or track.get("title", "Unknown Track")
-                recording_id = recording.get("id", "")
+            _LOGGER.debug(
+                "Medium %s has %d tracks (TOC has %d)",
+                medium.get("position"), len(track_list), len(toc)
+            )
+            
+            if len(track_list) != len(toc):
+                _LOGGER.debug("Skipping medium %s: track count mismatch", medium.get("position"))
+                continue
 
-                artist_credit = recording.get("artist-credit") or track.get("artist-credit", [])
-                artist = self._artist_credit_to_string(artist_credit)
-
-                tracks.append(
-                    TrackMetadata(
-                        title=title,
-                        artist=artist,
-                        recording_id=recording_id,
-                    )
+            distance = 0
+            for i, track in enumerate(track_list):
+                mb_length_ms = int(track.get("length", 0))
+                mb_length_sec = mb_length_ms // 1000
+                diff = abs(mb_length_sec - toc_lengths[i])
+                distance += diff
+                _LOGGER.debug(
+                    "Track %d: MB=%dms (%ds), TOC=%ds, diff=%d",
+                    i+1, mb_length_ms, mb_length_sec, toc_lengths[i], diff
                 )
+
+            _LOGGER.debug("Medium %s total distance: %d", medium.get("position"), distance)
+            
+            if distance < best_distance:
+                best_distance = distance
+                best_match = medium
+
+        _LOGGER.debug("Best match distance: %d (threshold: 10)", best_distance)
+        
+        if best_match and best_distance < 10:
+            _LOGGER.debug("Selected medium %s", best_match.get("position"))
+            return best_match
+        _LOGGER.debug("No medium matched within threshold")
+        return None
+
+    def _extract_tracks_from_medium(
+        self, medium: dict[str, Any]
+    ) -> list[TrackMetadata]:
+        """Extract track metadata from a single medium.
+
+        Args:
+            medium: Medium dict from MusicBrainz.
+
+        Returns:
+            List of TrackMetadata objects.
+        """
+        tracks: list[TrackMetadata] = []
+        track_list = medium.get("track-list", [])
+
+        for track in track_list:
+            recording = track.get("recording", {})
+            title = recording.get("title") or track.get("title", "Unknown Track")
+            recording_id = recording.get("id", "")
+
+            artist_credit = recording.get("artist-credit") or track.get("artist-credit", [])
+            artist = self._artist_credit_to_string(artist_credit)
+
+            tracks.append(
+                TrackMetadata(
+                    title=title,
+                    artist=artist,
+                    recording_id=recording_id,
+                )
+            )
 
         return tracks
 

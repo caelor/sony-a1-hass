@@ -77,7 +77,7 @@ class MetadataCoordinator:
             self._cache.set_source_id(fingerprint, f"{source_name}:{source_id}")
             await self._cache.async_save()
 
-        metadata = await self._providers[source_name].async_lookup_by_id(source_id)
+        metadata = await self._providers[source_name].async_lookup_by_id(source_id, player.toc)
 
         if player.toc:
             player.external_metadata = metadata
