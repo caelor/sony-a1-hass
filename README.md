@@ -15,6 +15,11 @@ To connect the Control-A1 bus to Home Assistant, you'll need an ESP32 running ES
 You will need the following sections in your ESPHome config:
 
 ```
+api:
+  ...
+  homeassistant_services: true
+  custom_services: true
+
 external_components:
   - source: github://caelor/sony-a1-hass
     components: [ "sony_a1_bus" ]
