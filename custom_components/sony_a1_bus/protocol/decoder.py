@@ -273,8 +273,11 @@ def _decode_time_update_message(
     bcd_codec = BCDCodec()
 
     if address_info.device_type == DeviceType.CD_PLAYER:
-        # CD format: no disc number
-        track_byte, _sub_index, mm_byte, ss_byte = params[:4]
+        # CD format: some messages have 3 params (track, mm, ss), others have 4 (track, sub_index, mm, ss)
+        if len(params) >= 4:
+            track_byte, _sub_index, mm_byte, ss_byte = params[:4]
+        else:
+            track_byte, mm_byte, ss_byte = params[:3]
         disc_number = None
     else:
         # MD format: includes disc number

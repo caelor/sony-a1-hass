@@ -204,13 +204,16 @@ class MusicBrainzProvider:
 
         parts: list[str] = []
         for credit in artist_credit:
-            artist = credit.get("artist", {})
-            name = artist.get("name", "")
-            if name:
-                parts.append(name)
-            joinphrase = credit.get("joinphrase", "")
-            if joinphrase:
-                parts.append(joinphrase)
+            if isinstance(credit, str):
+                parts.append(credit)
+            elif isinstance(credit, dict):
+                artist = credit.get("artist", {})
+                name = artist.get("name", "")
+                if name:
+                    parts.append(name)
+                joinphrase = credit.get("joinphrase", "")
+                if joinphrase:
+                    parts.append(joinphrase)
 
         return "".join(parts) if parts else "Unknown Artist"
 
@@ -249,13 +252,16 @@ class MusicBrainzProvider:
 
         parts: list[str] = []
         for credit in artist_credit:
-            artist = credit.get("artist", {})
-            name = artist.get("name", "")
-            if name:
-                parts.append(name)
-            joinphrase = credit.get("joinphrase", "")
-            if joinphrase:
-                parts.append(joinphrase)
+            if isinstance(credit, str):
+                parts.append(credit)
+            elif isinstance(credit, dict):
+                artist = credit.get("artist", {})
+                name = artist.get("name", "")
+                if name:
+                    parts.append(name)
+                joinphrase = credit.get("joinphrase", "")
+                if joinphrase:
+                    parts.append(joinphrase)
 
         return "".join(parts) if parts else "Unknown Artist"
 
