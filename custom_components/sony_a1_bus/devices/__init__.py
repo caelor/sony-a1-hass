@@ -35,13 +35,13 @@ class DeviceRegistry:
         self.bridge_node = bridge_node
         self.bridge_device_id = bridge_device_id
         self._devices: dict[tuple[DeviceType, int], Player] = {}
-        self._send_callback: Callable[[bytes], Awaitable[bool]] | None = None
+        self._send_callback: Callable[[bytes, int], Awaitable[bool]] | None = None
 
-    def set_send_callback(self, callback: Callable[[bytes], Awaitable[bool]]) -> None:
+    def set_send_callback(self, callback: Callable[[bytes, int], Awaitable[bool]]) -> None:
         """Set the callback for sending commands to the bus.
 
         Args:
-            callback: Async function that takes raw bytes and sends them to the bus,
+            callback: Async function that takes raw bytes and max_retries, sends them to the bus,
                      returning True on success, False on failure
         """
         self._send_callback = callback

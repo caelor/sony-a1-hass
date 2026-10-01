@@ -34,10 +34,12 @@ from .const import (
     ESPHOME_SERVICE_TRANSMIT,
     EVENT_SONY_A1_BUS_HEARTBEAT,
     EVENT_SONY_A1_BUS_RX,
+    INTER_MESSAGE_DELAY_S,
     SERVICE_DATA,
     SERVICE_SET_MUSICBRAINZ_ID,
     BridgeData,
     DeviceType,
+    get_retry_count_for_command,
 )
 from .coordinator import MetadataCoordinator
 from .devices import DeviceRegistry, Player
@@ -214,14 +216,14 @@ async def _async_query_known_devices(
         )
         
         # Create send callback for this bridge
-        async def _send_to_bridge(data: bytes) -> bool:
+        async def _send_to_bridge(data: bytes, max_retries: int = 0) -> bool:
             """Send data to the bus via this bridge."""
             try:
                 service_name = f"{bridge['node']}_{ESPHOME_SERVICE_TRANSMIT}"
                 await hass.services.async_call(
                     ESPHOME_DOMAIN,
                     service_name,
-                    {SERVICE_DATA: list(data), CONF_MAX_RETRIES: 0},
+                    {SERVICE_DATA: list(data), CONF_MAX_RETRIES: max_retries},
                     blocking=True,
                 )
                 return True
@@ -399,14 +401,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             
             # Create send callback for this bridge
-            async def _send_to_bridge(data: bytes) -> bool:
+            async def _send_to_bridge(data: bytes, max_retries: int = 0) -> bool:
                 """Send data to the bus via this bridge."""
                 try:
                     service_name = f"{bridge['node']}_{ESPHOME_SERVICE_TRANSMIT}"
                     await hass.services.async_call(
                         ESPHOME_DOMAIN,
                         service_name,
-                        {SERVICE_DATA: list(data), CONF_MAX_RETRIES: 0},
+                        {SERVICE_DATA: list(data), CONF_MAX_RETRIES: max_retries},
                         blocking=True,
                     )
                     return True
@@ -537,8 +539,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 len(responses),
                 player.name,
             )
-            for cmd in responses:
-                await player.async_send_command(cmd)
+            for i, cmd in enumerate(responses):
+                max_retries = get_retry_count_for_command(cmd)
+                await player.async_send_command(cmd, max_retries=max_retries)
+                if i < len(responses) - 1:
+                    await asyncio.sleep(INTER_MESSAGE_DELAY_S)
 
         # Create entities for newly discovered devices
         if is_new_device and player.media_player is None:

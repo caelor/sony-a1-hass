@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 
 from ..const import (
+    RETRY_COUNT_STATUS_QUERY,
+    RETRY_COUNT_TOC_QUERY,
     TOC_MAX_RETRIES,
     TOC_RETRY_TIMEOUT_SEC,
     CommandType,
@@ -125,7 +127,7 @@ class Player:
         self.repeat_one: bool = False
 
         # Configuration
-        self.enable_time_updates: bool = True
+        self.enable_time_updates: bool = False
 
         # S3 status fields
         self.input_source: str = "Unknown"
@@ -140,7 +142,7 @@ class Player:
         self.binary_sensors: list[BinarySensorEntity] = []
 
         # Callback for sending commands (set by device registry)
-        self._send_command_callback: Callable[[bytes], Awaitable[bool]] | None = None
+        self._send_command_callback: Callable[[bytes, int], Awaitable[bool]] | None = None
         # Callback for updating device name in registry (set by media player)
         self._update_device_name_callback: Callable[[str], None] | None = None
 
@@ -616,11 +618,12 @@ class Player:
         for binary_sensor in self.binary_sensors:
             binary_sensor.async_write_ha_state()
 
-    async def async_send_command(self, data: bytes) -> bool:
+    async def async_send_command(self, data: bytes, max_retries: int = 0) -> bool:
         """Send a command to this device via the bridge.
 
         Args:
             data: Raw command bytes (without address byte)
+            max_retries: Number of retries if command fails (0 = no retry)
 
         Returns:
             True if command sent successfully, False otherwise
@@ -634,7 +637,7 @@ class Player:
 
         # Prepend the device's "to" address
         full_data = bytes([self.canonical_address]) + data
-        return await self._send_command_callback(full_data)
+        return await self._send_command_callback(full_data, max_retries)
 
     async def async_query_status(self) -> bool:
         """Send 0x0F query status command to device.
@@ -642,7 +645,9 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.QUERY_STATUS]))
+        return await self.async_send_command(
+            bytes([CommandType.QUERY_STATUS]), max_retries=RETRY_COUNT_STATUS_QUERY
+        )
 
     async def async_play(self) -> bool:
         """Send play command to device.
@@ -695,16 +700,17 @@ class Player:
         """
         encoded_disc = self.codec.encode_byte(disc_number)
         return await self.async_send_command(
-            bytes([CommandType.QUERY_DISC, encoded_disc])
+            bytes([CommandType.QUERY_DISC, encoded_disc]),
+            max_retries=RETRY_COUNT_TOC_QUERY,
         )
 
 
 
-    def set_send_callback(self, callback: Callable[[bytes], Awaitable[bool]]) -> None:
+    def set_send_callback(self, callback: Callable[[bytes, int], Awaitable[bool]]) -> None:
         """Set the callback for sending commands to the bus.
 
         Args:
-            callback: Async function that takes raw bytes and sends them to the bus,
+            callback: Async function that takes raw bytes and max_retries, sends them to the bus,
                      returning True on success, False on failure
         """
         self._send_command_callback = callback

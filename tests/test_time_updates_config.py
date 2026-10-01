@@ -29,9 +29,9 @@ def md_player(hass):
 class TestTimeUpdatesConfiguration:
     """Test switchable time updates."""
 
-    def test_time_updates_enabled_by_default(self, md_player):
-        """Time updates should be enabled by default."""
-        assert md_player.enable_time_updates is True
+    def test_time_updates_disabled_by_default(self, md_player):
+        """Time updates should be disabled by default."""
+        assert md_player.enable_time_updates is False
 
     def test_disable_time_updates(self, md_player):
         """Time updates can be disabled."""
@@ -113,7 +113,7 @@ class TestConfigFlow:
         from custom_components.sony_a1_bus.config_flow import SonyA1BusConfigFlow
         
         # The config flow should set default options
-        assert DEFAULT_ENABLE_TIME_UPDATES is True
+        assert DEFAULT_ENABLE_TIME_UPDATES is False
 
     def test_options_flow_handler_exists(self, hass):
         """Options flow handler should exist."""

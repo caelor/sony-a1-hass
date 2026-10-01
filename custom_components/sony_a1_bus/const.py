@@ -21,7 +21,7 @@ SERVICE_SET_MUSICBRAINZ_ID = "set_musicbrainz_id"
 ATTR_MUSICBRAINZ_ID = "musicbrainz_id"
 
 CONF_ENABLE_TIME_UPDATES = "enable_time_updates"
-DEFAULT_ENABLE_TIME_UPDATES = True
+DEFAULT_ENABLE_TIME_UPDATES = False
 
 ESPHOME_DOMAIN = "esphome"
 ESPHOME_SERVICE_TRANSMIT = "transmit"
@@ -126,6 +126,37 @@ class TocState(StrEnum):
 
 TOC_RETRY_TIMEOUT_SEC = 30
 TOC_MAX_RETRIES = 3
+
+INTER_MESSAGE_DELAY_S = 0.02
+
+RETRY_COUNT_STATUS_QUERY = 1
+RETRY_COUNT_TOC_QUERY = 2
+
+TOC_QUERY_COMMANDS = {
+    CommandType.QUERY_DISC,
+    CommandType.QUERY_TRACK,
+    CommandType.QUERY_DISC_NAME,
+    CommandType.QUERY_TRACK_NAME,
+}
+
+
+def get_retry_count_for_command(cmd: bytes) -> int:
+    """Return the retry count for a command.
+
+    Args:
+        cmd: Command bytes (first byte is command type)
+
+    Returns:
+        Number of retries for this command type
+    """
+    if not cmd:
+        return 0
+    cmd_type = cmd[0]
+    if cmd_type in TOC_QUERY_COMMANDS:
+        return RETRY_COUNT_TOC_QUERY
+    if cmd_type == CommandType.QUERY_STATUS:
+        return RETRY_COUNT_STATUS_QUERY
+    return 0
 
 
 class BridgeData(TypedDict):
