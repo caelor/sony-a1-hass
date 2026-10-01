@@ -146,6 +146,14 @@ class TocReadCompleteMessage(Message):
 
 
 @dataclass
+class UnavailableMessage(Message):
+    """Unavailable/error response from 0x0E.
+    
+    Sent when a command is unavailable or invalid at the current time.
+    """
+
+
+@dataclass
 class DiscLoadedMessage(Message):
     """Disc loaded message from 0x58 response (CD only).
     

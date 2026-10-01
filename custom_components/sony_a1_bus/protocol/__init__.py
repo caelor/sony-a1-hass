@@ -25,6 +25,7 @@ from .messages import (
     TrackTextContinuationMessage,
     TrackTextFirstBlockMessage,
     TransportMessage,
+    UnavailableMessage,
 )
 
 __all__ = [
@@ -49,6 +50,7 @@ __all__ = [
     "TrackTextContinuationMessage",
     "TrackTextFirstBlockMessage",
     "TransportMessage",
+    "UnavailableMessage",
     "decode_address",
     "decode_message",
     "get_codec_for_device_type",

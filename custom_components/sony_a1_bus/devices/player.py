@@ -34,10 +34,12 @@ from ..protocol import (
     PowerMessage,
     StatusMessage,
     TimeUpdateMessage,
+    TocReadCompleteMessage,
     TrackChangeMessage,
     TrackEndApproachingMessage,
     TrackInfoMessage,
     TransportMessage,
+    UnavailableMessage,
 )
 from .time_estimator import TimeEstimator
 
@@ -298,6 +300,8 @@ class Player:
             responses = self._handle_device_name_message(message)
         elif isinstance(message, DiscLoadedMessage):
             responses = self._handle_disc_loaded_message(message)
+        elif isinstance(message, UnavailableMessage):
+            responses = self._handle_unavailable_message(message)
         elif message.command == ResponseType.EJECT:
             responses = self._handle_eject_message(message)
         elif message.command == ResponseType.DEVICE_READY:
@@ -554,6 +558,24 @@ class Player:
         Sets disc_loaded to false. No follow-up query needed.
         """
         return self._set_disc_loaded(False)
+
+    def _handle_unavailable_message(self, message: UnavailableMessage) -> list[bytes]:
+        """Handle 0x0E unavailable/error response.
+        
+        The deck is signaling that a command was invalid or unavailable.
+        If we're in the middle of TOC loading, advance to the next query instead of stalling.
+        """
+        _LOGGER.warning(
+            "Received 0x0E (unavailable) from %s during TOC state %s - command may be invalid",
+            self.name,
+            self._toc_state,
+        )
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+            return self._progress_toc()
+        
+        return []
 
     def _handle_disc_loaded_message(self, message: DiscLoadedMessage) -> list[bytes]:
         """Handle 0x58 disc loaded message.

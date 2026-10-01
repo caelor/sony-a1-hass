@@ -33,6 +33,7 @@ from .messages import (
     TrackTextContinuationMessage,
     TrackTextFirstBlockMessage,
     TransportMessage,
+    UnavailableMessage,
 )
 
 
@@ -148,6 +149,8 @@ def decode_message(
         return Message(command=command, raw_data=data)
     elif command == ResponseType.TOC_READ_COMPLETE:
         return TocReadCompleteMessage(command=command, raw_data=data)
+    elif command == ResponseType.UNAVAILABLE:
+        return UnavailableMessage(command=command, raw_data=data)
 
     # Unknown message type - return generic Message
     return Message(command=command, raw_data=data)

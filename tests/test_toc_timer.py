@@ -14,6 +14,7 @@ from custom_components.sony_a1_bus.protocol import (
     TrackTextFirstBlockMessage,
     TrackTextContinuationMessage,
     TocReadCompleteMessage,
+    UnavailableMessage,
 )
 
 
@@ -399,5 +400,82 @@ class TestTOCReadComplete:
             raw_data=b"",
         )
         responses = md_player.handle_message(toc_complete)
+        
+        assert len(responses) == 0
+
+
+class TestUnavailableResponse:
+    """Test 0x0E unavailable response handling."""
+
+    def test_unavailable_during_toc_loading_progresses(self, md_player):
+        """0x0E during TOC loading should progress to next query."""
+        disc_info = DiscInfoMessage(
+            command=0x60,
+            raw_data=b"",
+            disc_number=1,
+            indexes=1,
+            track_count=22,
+            total_minutes=79,
+            total_seconds=26,
+            frames=0,
+        )
+        md_player.handle_message(disc_info)
+        
+        unavailable = UnavailableMessage(
+            command=0x0E,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(unavailable)
+        
+        assert len(responses) > 0
+        assert responses[0][0] == 0x45
+
+    def test_unavailable_logs_warning(self, md_player, caplog):
+        """0x0E should log a warning."""
+        unavailable = UnavailableMessage(
+            command=0x0E,
+            raw_data=b"",
+        )
+        md_player.handle_message(unavailable)
+        
+        assert "0x0E" in caplog.text
+        assert "unavailable" in caplog.text.lower()
+
+    def test_unavailable_resets_timer_during_loading(self, md_player):
+        """0x0E during TOC loading should reset the timer."""
+        disc_info = DiscInfoMessage(
+            command=0x60,
+            raw_data=b"",
+            disc_number=1,
+            indexes=1,
+            track_count=22,
+            total_minutes=79,
+            total_seconds=26,
+            frames=0,
+        )
+        md_player.handle_message(disc_info)
+        
+        initial_timer = md_player._toc_retry_timer
+        
+        unavailable = UnavailableMessage(
+            command=0x0E,
+            raw_data=b"",
+        )
+        md_player.handle_message(unavailable)
+        
+        assert md_player._toc_retry_timer is not None
+        assert md_player._toc_retry_timer != initial_timer
+
+    def test_unavailable_no_action_when_not_loading(self, md_player):
+        """0x0E should not progress TOC when not in LOADING state."""
+        md_player._set_toc_state(TocState.COMPLETE)
+        md_player.device_capabilities = 0xFF
+        md_player.device_name = "Test MD"
+        
+        unavailable = UnavailableMessage(
+            command=0x0E,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(unavailable)
         
         assert len(responses) == 0

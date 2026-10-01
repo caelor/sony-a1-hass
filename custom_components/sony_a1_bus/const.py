@@ -95,6 +95,8 @@ class ResponseType(IntEnum):
     # Status
     STATUS = 0x70
     TOC_READ_COMPLETE = 0x71  # After TOC read, inserting disc (MD)
+    # Error responses
+    UNAVAILABLE = 0x0E  # Command unavailable or invalid
     # Title errors
     NO_DISC_NAME = 0x16
     NO_TRACK_NAME = 0x17
