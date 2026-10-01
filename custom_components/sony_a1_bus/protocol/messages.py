@@ -137,6 +137,15 @@ class TrackEndApproachingMessage(Message):
 
 
 @dataclass
+class TocReadCompleteMessage(Message):
+    """TOC read complete message from 0x71 response (MD only).
+    
+    Sent after the deck has finished reading the TOC from a newly inserted disc.
+    Can be used to trigger TOC loading.
+    """
+
+
+@dataclass
 class DiscLoadedMessage(Message):
     """Disc loaded message from 0x58 response (CD only).
     

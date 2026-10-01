@@ -94,6 +94,7 @@ class ResponseType(IntEnum):
     DEVICE_NAME = 0x6A
     # Status
     STATUS = 0x70
+    TOC_READ_COMPLETE = 0x71  # After TOC read, inserting disc (MD)
     # Title errors
     NO_DISC_NAME = 0x16
     NO_TRACK_NAME = 0x17

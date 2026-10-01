@@ -26,6 +26,7 @@ from .messages import (
     PowerMessage,
     StatusMessage,
     TimeUpdateMessage,
+    TocReadCompleteMessage,
     TrackChangeMessage,
     TrackEndApproachingMessage,
     TrackInfoMessage,
@@ -145,6 +146,8 @@ def decode_message(
         return _decode_track_text_continuation(command, data, params)
     elif command in (ResponseType.NO_DISC_NAME, ResponseType.NO_TRACK_NAME):
         return Message(command=command, raw_data=data)
+    elif command == ResponseType.TOC_READ_COMPLETE:
+        return TocReadCompleteMessage(command=command, raw_data=data)
 
     # Unknown message type - return generic Message
     return Message(command=command, raw_data=data)

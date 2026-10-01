@@ -13,6 +13,7 @@ from ..protocol import (
     DiscTextFirstBlockMessage,
     HexCodec,
     Message,
+    TocReadCompleteMessage,
     TrackTextContinuationMessage,
     TrackTextFirstBlockMessage,
 )
@@ -67,6 +68,7 @@ class MDPlayer(Player):
         - 0x5B: Track text continuation
         - 0x16: No disc name
         - 0x17: No track name
+        - 0x71: TOC read complete
         """
         if message.command == ResponseType.RECORD_PLAY:
             self.transport_state = TransportState.RECORDING
@@ -86,6 +88,8 @@ class MDPlayer(Player):
             return True, self._handle_no_disc_name()
         elif message.command == ResponseType.NO_TRACK_NAME:
             return True, self._handle_no_track_name()
+        elif message.command == ResponseType.TOC_READ_COMPLETE:
+            return True, self._handle_toc_read_complete(message)
 
         return False, []
 
@@ -215,4 +219,19 @@ class MDPlayer(Player):
 
     def _handle_disc_loaded_message(self, message: DiscLoadedMessage) -> list[bytes]:
         """Override base class - MD 0x58 is disc text, not disc loaded."""
+        return []
+
+    def _handle_toc_read_complete(self, message: TocReadCompleteMessage) -> list[bytes]:
+        """Handle 0x71 TOC read complete message.
+        
+        The deck has finished reading the TOC. Trigger TOC loading if not already in progress.
+        """
+        if not self.disc_loaded:
+            return self._set_disc_loaded(True, disc_number=1)
+        
+        if self._toc_state not in (TocState.LOADING, TocState.COMPLETE):
+            _LOGGER.debug("0x71 received, triggering TOC refresh for %s", self.name)
+            encoded_disc = self.codec.encode_byte(self.current_disc)
+            return [bytes([CommandType.QUERY_DISC, encoded_disc])]
+        
         return []

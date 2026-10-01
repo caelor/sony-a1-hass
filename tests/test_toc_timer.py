@@ -13,6 +13,7 @@ from custom_components.sony_a1_bus.protocol import (
     DiscTextContinuationMessage,
     TrackTextFirstBlockMessage,
     TrackTextContinuationMessage,
+    TocReadCompleteMessage,
 )
 
 
@@ -338,3 +339,65 @@ class TestTOCTimerReset:
         md_player.handle_message(track_info)
         
         assert md_player._toc_retry_timer is None
+
+
+class TestTOCReadComplete:
+    """Test 0x71 TOC read complete handling."""
+
+    def test_toc_read_complete_sets_disc_loaded(self, md_player):
+        """0x71 should set disc_loaded if not already set."""
+        md_player.disc_loaded = False
+        
+        toc_complete = TocReadCompleteMessage(
+            command=0x71,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(toc_complete)
+        
+        assert md_player.disc_loaded is True
+        assert len(responses) > 0
+        assert responses[0][0] == 0x44
+
+    def test_toc_read_complete_refreshes_if_incomplete(self, md_player):
+        """0x71 should refresh TOC if state is INCOMPLETE."""
+        md_player.disc_loaded = True
+        md_player._set_toc_state(TocState.INCOMPLETE)
+        
+        toc_complete = TocReadCompleteMessage(
+            command=0x71,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(toc_complete)
+        
+        assert len(responses) > 0
+        assert responses[0][0] == 0x44
+
+    def test_toc_read_complete_no_action_if_loading(self, md_player):
+        """0x71 should not trigger refresh if already LOADING."""
+        md_player.disc_loaded = True
+        md_player._set_toc_state(TocState.LOADING)
+        md_player.device_capabilities = 0xFF
+        md_player.device_name = "Test MD"
+        
+        toc_complete = TocReadCompleteMessage(
+            command=0x71,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(toc_complete)
+        
+        assert len(responses) == 0
+
+    def test_toc_read_complete_no_action_if_complete(self, md_player):
+        """0x71 should not trigger refresh if already COMPLETE."""
+        md_player.disc_loaded = True
+        md_player._set_toc_state(TocState.COMPLETE)
+        md_player.device_capabilities = 0xFF
+        md_player.device_name = "Test MD"
+        
+        toc_complete = TocReadCompleteMessage(
+            command=0x71,
+            raw_data=b"",
+        )
+        responses = md_player.handle_message(toc_complete)
+        
+        assert len(responses) == 0
