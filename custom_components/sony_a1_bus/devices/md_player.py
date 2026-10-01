@@ -6,7 +6,7 @@ import logging
 
 from homeassistant.core import HomeAssistant
 
-from ..const import CommandType, DeviceType, ResponseType, TransportState
+from ..const import CommandType, DeviceType, ResponseType, TocState, TransportState
 from ..protocol import (
     DiscLoadedMessage,
     DiscTextContinuationMessage,
@@ -93,6 +93,10 @@ class MDPlayer(Player):
         """Handle 0x58 disc text first block."""
         self._title_reassembler = TitleReassembler(message.title_fragment)
         self._title_reassembler_track = None
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._check_title_complete()
 
     def _handle_disc_text_continuation(self, message: DiscTextContinuationMessage) -> list[bytes]:
@@ -104,12 +108,20 @@ class MDPlayer(Player):
             )
             return []
         self._title_reassembler.add_block(message.block_number, message.data)
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._check_title_complete()
 
     def _handle_track_text_first(self, message: TrackTextFirstBlockMessage) -> list[bytes]:
         """Handle 0x5A track text first block."""
         self._title_reassembler = TitleReassembler(message.title_fragment)
         self._title_reassembler_track = message.track_number
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._check_title_complete()
 
     def _handle_track_text_continuation(self, message: TrackTextContinuationMessage) -> list[bytes]:
@@ -121,6 +133,10 @@ class MDPlayer(Player):
             )
             return []
         self._title_reassembler.add_block(message.block_number, message.data)
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._check_title_complete()
 
     def _check_title_complete(self) -> list[bytes]:
@@ -143,6 +159,10 @@ class MDPlayer(Player):
     def _handle_no_disc_name(self) -> list[bytes]:
         """Handle 0x16 no disc name response."""
         self.disc_title = "No Name"
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._progress_toc()
 
     def _handle_no_track_name(self) -> list[bytes]:
@@ -152,6 +172,10 @@ class MDPlayer(Player):
             track_index = track_number - 1
             if 0 <= track_index < len(self.toc):
                 self.toc[track_index]["title"] = "No Name"
+        
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+        
         return self._progress_toc()
 
     def _find_current_subject_track(self) -> int | None:

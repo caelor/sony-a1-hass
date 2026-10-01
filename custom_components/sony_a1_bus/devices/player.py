@@ -409,6 +409,9 @@ class Player:
         self.toc[track_index]["length_sec"] = message.seconds
         self.toc[track_index]["length"] = message.minutes * 60 + message.seconds
 
+        if self._toc_state == TocState.LOADING:
+            self._start_toc_timer()
+
         return self._progress_toc()
 
     def _progress_toc(self) -> list[bytes]:
