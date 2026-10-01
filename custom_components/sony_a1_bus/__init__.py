@@ -26,7 +26,9 @@ from .const import (
     ATTR_DATA,
     ATTR_MUSICBRAINZ_ID,
     ATTR_TRUNCATED,
+    CONF_ENABLE_TIME_UPDATES,
     CONF_MAX_RETRIES,
+    DEFAULT_ENABLE_TIME_UPDATES,
     DOMAIN,
     ESPHOME_DOMAIN,
     ESPHOME_SERVICE_TRANSMIT,
@@ -281,6 +283,23 @@ def _ensure_toc_callback_set(
     )
 
 
+def _apply_time_updates_setting(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply the time updates setting to all players."""
+    enable_time_updates = entry.options.get(
+        CONF_ENABLE_TIME_UPDATES, DEFAULT_ENABLE_TIME_UPDATES
+    )
+    
+    device_registries = hass.data[DOMAIN][entry.entry_id].get("device_registries", {})
+    for device_registry in device_registries.values():
+        for player in device_registry.get_all_devices():
+            player.set_time_updates_enabled(enable_time_updates)
+
+
+async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    _apply_time_updates_setting(hass, entry)
+
+
 async def _async_create_entities_for_player(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -361,6 +380,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Scan device registry for known devices
     _scan_known_devices(hass, entry)
     
+    # Register options update listener
+    entry.async_on_unload(entry.add_update_listener(_async_update_options))
+    
     @callback
     def _get_or_create_device_registry(
         bridge: BridgeData,
@@ -393,6 +415,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     return False
             
             device_registries[bridge_device_id].set_send_callback(_send_to_bridge)
+        
+        # Apply time updates setting to any new players
+        _apply_time_updates_setting(hass, entry)
         
         return device_registries[bridge_device_id]
 

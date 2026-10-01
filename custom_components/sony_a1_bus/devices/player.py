@@ -124,6 +124,9 @@ class Player:
         self.repeat_all: bool = False
         self.repeat_one: bool = False
 
+        # Configuration
+        self.enable_time_updates: bool = True
+
         # S3 status fields
         self.input_source: str = "Unknown"
         self.mono: bool = False
@@ -460,12 +463,18 @@ class Player:
         self.track_duration_seconds = message.seconds
         self.time_estimator.set_position(0.0)
 
+        responses = []
+        
         # If we receive a track change but transport state is not playing,
         # query the device status to sync state
         if self.transport_state != TransportState.PLAYING:
-            return [bytes([CommandType.QUERY_STATUS]), bytes([CommandType.CMD_SEND_TIME_UPDATES])]
-
-        return [bytes([CommandType.CMD_SEND_TIME_UPDATES])]
+            responses.append(bytes([CommandType.QUERY_STATUS]))
+        
+        # Only request time updates if enabled
+        if self.enable_time_updates:
+            responses.append(bytes([CommandType.CMD_SEND_TIME_UPDATES]))
+        
+        return responses
 
     def _handle_time_update_message(self, message: TimeUpdateMessage) -> list[bytes]:
         """Handle 0x51 time update message."""
@@ -715,3 +724,12 @@ class Player:
             callback: Async function called when TOC is fully populated, or None to clear.
         """
         self._toc_complete_callback = callback
+
+    def set_time_updates_enabled(self, enabled: bool) -> None:
+        """Enable or disable per-second time updates.
+        
+        Args:
+            enabled: True to request time updates, False to disable
+        """
+        self.enable_time_updates = enabled
+        _LOGGER.debug("Time updates %s for %s", "enabled" if enabled else "disabled", self.name)

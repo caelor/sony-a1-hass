@@ -20,6 +20,9 @@ CONF_MAX_RETRIES = "max_retries"
 SERVICE_SET_MUSICBRAINZ_ID = "set_musicbrainz_id"
 ATTR_MUSICBRAINZ_ID = "musicbrainz_id"
 
+CONF_ENABLE_TIME_UPDATES = "enable_time_updates"
+DEFAULT_ENABLE_TIME_UPDATES = True
+
 ESPHOME_DOMAIN = "esphome"
 ESPHOME_SERVICE_TRANSMIT = "transmit"
 
