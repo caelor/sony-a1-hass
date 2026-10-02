@@ -129,6 +129,7 @@ TOC_RETRY_TIMEOUT_SEC = 30
 TOC_MAX_RETRIES = 3
 
 INTER_MESSAGE_DELAY_S = 0.02
+STATUS_QUERY_DELAY_S = 0.15
 
 # Bus silence thresholds for transmission gate
 BUS_SILENCE_NORMAL_SEC = 0.2      # 200ms for normal priority

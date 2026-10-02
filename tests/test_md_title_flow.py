@@ -422,11 +422,32 @@ class TestMDDiscTitleCleared:
         assert player.disc_title is None
 
     def test_disc_title_cleared_on_eject(self):
-        """Test that disc_title is cleared on eject."""
+        """Test that disc_title is cleared on 0x03 eject."""
         player = _make_md_player()
         player.disc_loaded = True
         player.disc_title = "Old Album"
 
         msg = Message(command=ResponseType.EJECT, raw_data=b"")
-        player.handle_message(msg)
+        responses = player.handle_message(msg)
+        # 0x03 clears disc_title
         assert player.disc_title is None
+
+    def test_title_reassembler_reset_on_disc_unload(self):
+        """Test that title reassembler state is reset when disc is unloaded."""
+        player = _make_md_player()
+        player.disc_loaded = True
+        player.current_disc = 1
+
+        title = b"A" * 14
+        first_block = DiscTextFirstBlockMessage(
+            command=ResponseType.DISC_TEXT_FIRST,
+            raw_data=bytes([0xB8, 0x58, 0x01, 0x00, 0x00]) + title,
+            disc_number=1,
+            title_fragment=title,
+        )
+        player.handle_message(first_block)
+        assert player._title_reassembler is not None
+
+        player._set_disc_loaded(False)
+        assert player._title_reassembler is None
+        assert player._title_reassembler_track is None

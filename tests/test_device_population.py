@@ -215,11 +215,11 @@ async def test_query_known_devices_sends_query_status(
         await _async_query_known_devices(hass, mock_config_entry, "test_node", esphome_device.id)
         
         # Check that sleep was called with correct delays
-        assert mock_sleep.call_count == 1  # 0.1s per device
+        assert mock_sleep.call_count == 1
         
         # Check delays
         calls = [call.args[0] for call in mock_sleep.call_args_list]
-        assert calls[0] == 0.1  # 100ms between queries
+        assert calls[0] == 0.15
         
         # Check that player was created
         device_registries = hass.data[DOMAIN][mock_config_entry.entry_id]["device_registries"]

@@ -217,6 +217,13 @@ class MDPlayer(Player):
 
         return []
 
+    def _set_disc_loaded(self, loaded: bool, disc_number: int = 1, origin_is_status: bool = False) -> list[bytes]:
+        """Override base class to reset title reassembler on disc unload."""
+        if not loaded:
+            self._title_reassembler = None
+            self._title_reassembler_track = None
+        return super()._set_disc_loaded(loaded, disc_number, origin_is_status)
+
     def _handle_disc_loaded_message(self, message: DiscLoadedMessage) -> list[bytes]:
         """Override base class - MD 0x58 is disc text, not disc loaded."""
         return []
