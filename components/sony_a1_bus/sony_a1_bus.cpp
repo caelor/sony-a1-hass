@@ -141,6 +141,22 @@ void SonyA1Bus::loop() {
       this->handle_collision_();
     } else if (this->tx_phase_done_) {
       this->handle_tx_complete_();
+    } else {
+      uint32_t now = micros();
+      if (static_cast<uint32_t>(now - this->tx_start_time_) >= TX_WATCHDOG_TIMEOUT_US) {
+        ESP_LOGE(TAG, "TX watchdog: recovering from stuck TX state (elapsed=%uus)",
+                 (unsigned int)(now - this->tx_start_time_));
+        esp_timer_stop(this->tx_timer_);
+        SonyA1Bus::release_bus_(gpio_num_t(this->pin_));
+        this->set_bus_state_(BusState::BUS_BUSY);
+        this->last_bus_activity_ = micros();
+        this->tx_byte_index_ = 0;
+        this->tx_bit_index_ = 0;
+        this->tx_current_byte_ = 0;
+        this->tx_phase_ = TxPhase::TX_PHASE_SYNC_LOW;
+        this->pending_tx_active_ = false;
+        this->stats_.tx_rejections++;
+      }
     }
   }
 
@@ -152,6 +168,11 @@ void SonyA1Bus::loop() {
         this->start_tx_attempt_();
       }
     }
+  }
+
+  if (this->bus_activity_detected_) {
+    this->bus_activity_detected_ = false;
+    ESP_LOGD(TAG, "Bus state: IDLE -> BUSY (activity detected)");
   }
 
   while (this->ring_read_ != this->ring_write_) {
@@ -176,6 +197,7 @@ bool IRAM_ATTR HOT SonyA1Bus::rmt_rx_done_callback(rmt_channel_handle_t channel,
   self->last_bus_activity_ = micros();
   if (self->bus_state_ == BusState::BUS_IDLE) {
     self->bus_state_ = BusState::BUS_BUSY;
+    self->bus_activity_detected_ = true;
   }
 
   size_t write_idx = self->ring_write_ % RING_BUFFER_SIZE;
@@ -374,6 +396,7 @@ void SonyA1Bus::start_tx_attempt_() {
   this->tx_current_byte_ = this->pending_tx_data_[0];
   this->tx_collision_ = false;
   this->tx_phase_done_ = false;
+  this->tx_start_time_ = micros();
 
   esp_timer_stop(this->tx_timer_);
   this->set_bus_state_(BusState::BUS_TX);

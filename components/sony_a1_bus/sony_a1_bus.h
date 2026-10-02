@@ -43,6 +43,7 @@ inline constexpr uint32_t TX_BIT_0_LOW_US = 570;
 inline constexpr uint32_t TX_BIT_1_LOW_US = 1210;
 inline constexpr uint32_t TX_BIT_DELIM_US = 600;
 inline constexpr uint32_t TX_INTER_MESSAGE_US = 3000;
+inline constexpr uint32_t TX_WATCHDOG_TIMEOUT_US = 50000;
 
 enum class BusState : uint8_t {
   BUS_IDLE = 0,
@@ -131,10 +132,12 @@ class SonyA1Bus final : public Component
 
   volatile BusState bus_state_{BusState::BUS_IDLE};
   volatile uint32_t last_bus_activity_{0};
+  volatile bool bus_activity_detected_{false};
 
   volatile TxPhase tx_phase_{TxPhase::TX_PHASE_SYNC_LOW};
   volatile bool tx_collision_{false};
   volatile bool tx_phase_done_{false};
+  volatile uint32_t tx_start_time_{0};
   size_t tx_byte_index_{0};
   uint8_t tx_current_byte_{0};
   uint8_t tx_bit_index_{0};

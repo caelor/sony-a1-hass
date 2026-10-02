@@ -72,9 +72,11 @@ class MDPlayer(Player):
         """
         if message.command == ResponseType.RECORD_PLAY:
             self.transport_state = TransportState.RECORDING
+            self.time_estimator.play()
             return True, []
         elif message.command == ResponseType.RECORD_PAUSE_STATE:
             self.transport_state = TransportState.RECORD_PAUSE
+            self.time_estimator.pause()
             return True, []
         elif isinstance(message, DiscTextFirstBlockMessage):
             return True, self._handle_disc_text_first(message)
@@ -95,12 +97,17 @@ class MDPlayer(Player):
 
     def _handle_disc_text_first(self, message: DiscTextFirstBlockMessage) -> list[bytes]:
         """Handle 0x58 disc text first block."""
+        if self._title_reassembler is not None:
+            _LOGGER.warning(
+                "Disc text first block received while title reassembly in progress for %s - discarding partial title",
+                self.name,
+            )
         self._title_reassembler = TitleReassembler(message.title_fragment)
         self._title_reassembler_track = None
-        
+
         if self._toc_state == TocState.LOADING:
             self._start_toc_timer()
-        
+
         return self._check_title_complete()
 
     def _handle_disc_text_continuation(self, message: DiscTextContinuationMessage) -> list[bytes]:
@@ -120,12 +127,17 @@ class MDPlayer(Player):
 
     def _handle_track_text_first(self, message: TrackTextFirstBlockMessage) -> list[bytes]:
         """Handle 0x5A track text first block."""
+        if self._title_reassembler is not None:
+            _LOGGER.warning(
+                "Track text first block received while title reassembly in progress for %s - discarding partial title",
+                self.name,
+            )
         self._title_reassembler = TitleReassembler(message.title_fragment)
         self._title_reassembler_track = message.track_number
-        
+
         if self._toc_state == TocState.LOADING:
             self._start_toc_timer()
-        
+
         return self._check_title_complete()
 
     def _handle_track_text_continuation(self, message: TrackTextContinuationMessage) -> list[bytes]:

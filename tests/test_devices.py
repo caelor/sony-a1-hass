@@ -1,6 +1,7 @@
 """Tests for the device layer."""
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,6 +10,7 @@ from custom_components.sony_a1_bus.const import (
     CommandType,
     DeviceType,
     ResponseType,
+    TocState,
     TransportState,
 )
 from custom_components.sony_a1_bus.devices import DeviceRegistry
@@ -21,12 +23,15 @@ from custom_components.sony_a1_bus.protocol import (
     DeviceNameMessage,
     DiscInfoMessage,
     DiscLoadedMessage,
+    DiscTextFirstBlockMessage,
+    Message,
     PowerMessage,
     StatusMessage,
     TimeUpdateMessage,
     TrackChangeMessage,
     TrackEndApproachingMessage,
     TrackInfoMessage,
+    TrackTextFirstBlockMessage,
     TransportMessage,
 )
 
@@ -150,6 +155,7 @@ class TestPlayer:
     def test_handle_track_change_message(self):
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
         player.enable_time_updates = True
+        player.disc_loaded = True  # Required for track change to be processed
         msg = TrackChangeMessage(
             command=ResponseType.TRACK_STATUS,
             raw_data=b"",
@@ -175,7 +181,8 @@ class TestPlayer:
         player.device_capabilities = 0x01
         player.device_name = "Test Player"
         player.enable_time_updates = True
-        
+        player.disc_loaded = True  # Required for track change to be processed
+
         msg = TrackChangeMessage(
             command=ResponseType.TRACK_STATUS,
             raw_data=b"",
@@ -194,7 +201,8 @@ class TestPlayer:
         # Set transport state to paused
         player.transport_state = TransportState.PAUSED
         player.enable_time_updates = True
-        
+        player.disc_loaded = True  # Required for track change to be processed
+
         msg = TrackChangeMessage(
             command=ResponseType.TRACK_STATUS,
             raw_data=b"",
@@ -212,7 +220,8 @@ class TestPlayer:
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
         # Transport state defaults to stopped
         player.enable_time_updates = True
-        
+        player.disc_loaded = True  # Required for track change to be processed
+
         msg = TrackChangeMessage(
             command=ResponseType.TRACK_STATUS,
             raw_data=b"",
@@ -525,6 +534,7 @@ class TestPlayerTimeEstimator:
 
     def test_track_change_resets_time_estimator_position(self):
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.disc_loaded = True  # Required for track change to be processed
         msg = TrackChangeMessage(
             command=ResponseType.TRACK_STATUS,
             raw_data=b"",
@@ -545,6 +555,7 @@ class TestPlayerTimeEstimator:
             "custom_components.sony_a1_bus.devices.time_estimator",
             fromlist=["TimeEstimator"],
         ).TimeEstimator(clock=clock)
+        player.disc_loaded = True  # Required for track change to be processed
         player.handle_message(TransportMessage(command=ResponseType.PLAYING, raw_data=b""))
         clock.advance(10.0)
         assert player.time_estimator.get_position() == 10.0
@@ -568,6 +579,7 @@ class TestPlayerTimeEstimator:
             "custom_components.sony_a1_bus.devices.time_estimator",
             fromlist=["TimeEstimator"],
         ).TimeEstimator(clock=clock)
+        player.disc_loaded = True  # Required for time update to be processed
         player.handle_message(TransportMessage(command=ResponseType.PLAYING, raw_data=b""))
         msg = TimeUpdateMessage(
             command=ResponseType.TIME_UPDATE,
@@ -787,6 +799,7 @@ class TestEjectMessage:
         
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
         player.disc_loaded = True
+        player.current_disc = 1
         player.device_capabilities = 0x01
         player.device_name = "Test"
         
@@ -797,7 +810,7 @@ class TestEjectMessage:
         assert player.disc_loaded is False
 
     def test_eject_message_when_already_unloaded(self):
-        """Test that 0x03 eject when already unloaded is a no-op."""
+        """Test that 0x03 TOC updated when already unloaded is a no-op."""
         from custom_components.sony_a1_bus.protocol import Message
         
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
@@ -1306,6 +1319,9 @@ class TestTOCClearOnUnload:
         
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
         player.disc_loaded = True
+        player.current_disc = 1
+        player.device_capabilities = 0x01
+        player.device_name = "Test"
         player.toc = [
             {"length_min": 3, "length_sec": 0, "title": "Track 01", "length": 180},
         ]
@@ -1425,11 +1441,14 @@ class TestTocState:
 
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=mock_hass)
         player.disc_loaded = True
+        player.current_disc = 1
+        player.device_capabilities = 0x01
+        player.device_name = "Test"
         player._toc_state = TocState.LOADING
         player._toc_retry_timer = mock_timer
 
         msg = Message(command=ResponseType.EJECT, raw_data=b"")
-        player.handle_message(msg)
+        responses = player.handle_message(msg)
 
         # 0x03 sets disc_loaded to False
         assert player.disc_loaded is False
@@ -1574,3 +1593,132 @@ class TestTocState:
         player.handle_message(msg)
 
         listener.assert_not_called()
+
+
+class TestStateMachineRobustness:
+    """Tests for state machine robustness fixes."""
+
+    def test_power_off_stops_time_estimator(self):
+        """Test that power off stops the time estimator (H1)."""
+        player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.time_estimator.play()
+        assert player.time_estimator.is_playing
+
+        msg = PowerMessage(command=ResponseType.POWER_OFF, raw_data=b"", power_on=False)
+        player.handle_message(msg)
+
+        assert player.time_estimator.is_stopped
+        assert player.transport_state == TransportState.STOPPED
+
+    def test_md_record_play_syncs_estimator(self):
+        """Test that MD record play syncs the time estimator (H2)."""
+        player = MDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        assert player.time_estimator.is_stopped
+
+        msg = Message(command=ResponseType.RECORD_PLAY, raw_data=b"")
+        player.handle_message(msg)
+
+        assert player.time_estimator.is_playing
+        assert player.transport_state == TransportState.RECORDING
+
+    def test_md_record_pause_syncs_estimator(self):
+        """Test that MD record pause syncs the time estimator (H2)."""
+        player = MDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.time_estimator.play()
+        assert player.time_estimator.is_playing
+
+        msg = Message(command=ResponseType.RECORD_PAUSE_STATE, raw_data=b"")
+        player.handle_message(msg)
+
+        assert player.time_estimator.is_paused
+        assert player.transport_state == TransportState.RECORD_PAUSE
+
+    def test_track_change_ignored_when_disc_not_loaded(self):
+        """Test that track change is ignored when disc not loaded (H3)."""
+        player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.disc_loaded = False
+        player.device_capabilities = 0xFF  # Avoid fallback query
+        player.device_name = "Test"  # Avoid fallback query
+
+        msg = TrackChangeMessage(
+            command=ResponseType.TRACK_STATUS,
+            raw_data=b"",
+            disc_number=1,
+            track_number=1,
+            minutes=0,
+            seconds=0,
+        )
+        responses = player.handle_message(msg)
+
+        assert responses == []
+        assert player.current_track == 0
+
+    def test_time_update_ignored_when_disc_not_loaded(self):
+        """Test that time update is ignored when disc not loaded (H3)."""
+        player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.disc_loaded = False
+        player.device_capabilities = 0xFF  # Avoid fallback query
+        player.device_name = "Test"  # Avoid fallback query
+
+        msg = TimeUpdateMessage(
+            command=ResponseType.TIME_UPDATE,
+            raw_data=b"",
+            track_number=1,
+            disc_number=1,
+            minutes=0,
+            seconds=0,
+        )
+        responses = player.handle_message(msg)
+
+        assert responses == []
+        assert player.current_track == 0
+
+    def test_title_reassembler_interleaving_logs_warning(self, caplog):
+        """Test that interleaved title first blocks log a warning (H4)."""
+        player = MDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+
+        # Start assembling a track title
+        track_first = TrackTextFirstBlockMessage(
+            command=ResponseType.TRACK_TEXT_FIRST,
+            raw_data=b"",
+            track_number=1,
+            title_fragment=b"Test",
+        )
+        player.handle_message(track_first)
+        assert player._title_reassembler is not None
+
+        # Interrupt with disc text first block
+        with caplog.at_level(logging.WARNING):
+            disc_first = DiscTextFirstBlockMessage(
+                command=ResponseType.DISC_LOADED,
+                raw_data=b"",
+                disc_number=1,
+                title_fragment=b"Album",
+            )
+            player.handle_message(disc_first)
+
+        assert "title reassembly in progress" in caplog.text
+
+    def test_device_ready_skips_query_when_disc_loaded(self):
+        """Test that 0x08 doesn't trigger QUERY_DISC if disc already loaded (H7)."""
+        player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.disc_loaded = True
+        player._toc_state = TocState.COMPLETE
+
+        msg = Message(command=ResponseType.DEVICE_READY, raw_data=b"")
+        responses = player.handle_message(msg)
+
+        # Should not send QUERY_DISC (0x44)
+        assert all(CommandType.QUERY_DISC not in resp for resp in responses)
+
+    def test_device_ready_triggers_query_when_disc_not_loaded(self):
+        """Test that 0x08 triggers QUERY_DISC if disc not loaded."""
+        player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
+        player.disc_loaded = False
+
+        msg = Message(command=ResponseType.DEVICE_READY, raw_data=b"")
+        responses = player.handle_message(msg)
+
+        # Should send QUERY_DISC (0x44)
+        assert any(CommandType.QUERY_DISC in resp for resp in responses)
+        assert player.disc_loaded is True
