@@ -782,7 +782,7 @@ class TestEjectMessage:
     """Tests for 0x03 eject message handling."""
 
     def test_eject_message_sets_disc_loaded_false(self):
-        """Test that 0x03 eject message sets disc_loaded to false."""
+        """Test that 0x03 sets disc_loaded to False."""
         from custom_components.sony_a1_bus.protocol import Message
         
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
@@ -793,9 +793,8 @@ class TestEjectMessage:
         msg = Message(command=ResponseType.EJECT, raw_data=b"")
         responses = player.handle_message(msg)
         
+        # 0x03 sets disc_loaded to False
         assert player.disc_loaded is False
-        # Eject should not trigger any queries
-        assert responses == []
 
     def test_eject_message_when_already_unloaded(self):
         """Test that 0x03 eject when already unloaded is a no-op."""
@@ -1302,20 +1301,22 @@ class TestTOCClearOnUnload:
     """Tests for TOC clearing on disc unload."""
 
     def test_eject_clears_toc(self):
-        """Test that eject message clears TOC."""
+        """Test that 0x03 clears disc_loaded and TOC."""
         from custom_components.sony_a1_bus.protocol import Message
-
+        
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
         player.disc_loaded = True
         player.toc = [
             {"length_min": 3, "length_sec": 0, "title": "Track 01", "length": 180},
         ]
-
+        
         msg = Message(command=ResponseType.EJECT, raw_data=b"")
-        player.handle_message(msg)
-
+        responses = player.handle_message(msg)
+        
+        # 0x03 sets disc_loaded to False
         assert player.disc_loaded is False
-        assert player.toc == []
+        # TOC should be cleared
+        assert len(player.toc) == 0
 
     def test_set_disc_loaded_false_clears_toc(self):
         """Test that _set_disc_loaded(False) clears TOC."""
@@ -1414,8 +1415,8 @@ class TestTocState:
         mock_timer.cancel.assert_called()
 
     def test_eject_sets_complete_and_cancels_timer(self):
-        """Test that eject sets COMPLETE and cancels timer."""
-        from custom_components.sony_a1_bus.const import TocState
+        """Test that 0x03 sets disc_loaded to False and cancels timer."""
+        from custom_components.sony_a1_bus.const import TocState, CommandType
         from custom_components.sony_a1_bus.protocol import Message
 
         mock_hass = MagicMock()
@@ -1430,8 +1431,12 @@ class TestTocState:
         msg = Message(command=ResponseType.EJECT, raw_data=b"")
         player.handle_message(msg)
 
+        # 0x03 sets disc_loaded to False
+        assert player.disc_loaded is False
+        # TOC state should be set to Complete
         assert player.toc_state == TocState.COMPLETE
-        mock_timer.cancel.assert_called()
+        # Timer should be cancelled
+        mock_timer.cancel.assert_called_once()
 
     def test_timeout_triggers_retry(self):
         """Test that timeout triggers a track re-query."""

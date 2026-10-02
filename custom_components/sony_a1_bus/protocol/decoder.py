@@ -4,6 +4,7 @@ Handles address byte decoding and message dispatch. Converts raw bytes into
 typed Message objects using device-specific codecs.
 """
 
+import logging
 from dataclasses import dataclass
 
 from ..const import (
@@ -15,6 +16,8 @@ from ..const import (
     TransportState,
 )
 from .codec import BCDCodec, Codec, HexCodec
+_LOGGER = logging.getLogger(__name__)
+
 from .messages import (
     DeviceCapacityMessage,
     DeviceNameMessage,
@@ -135,10 +138,17 @@ def decode_message(
         return _decode_device_capacity_message(command, data, params)
     elif command == ResponseType.DEVICE_NAME and len(params) >= 1:
         return _decode_device_name_message(command, data, params)
-    elif command == ResponseType.DISC_LOADED and len(params) >= 1:
-        if address_info.device_type == DeviceType.MD_RECORDER and len(params) >= 15:
-            return _decode_disc_text_first_block(command, data, params, codec)
-        return _decode_disc_loaded_message(command, data, params, codec)
+    elif command == ResponseType.DISC_LOADED:
+        if address_info.device_type == DeviceType.MD_RECORDER:
+            if len(params) >= 15:
+                return _decode_disc_text_first_block(command, data, params, codec)
+            _LOGGER.warning("MD 0x58 with unexpected param count: %d", len(params))
+            return None
+        else:
+            if len(params) >= 1:
+                return _decode_disc_loaded_message(command, data, params, codec)
+            _LOGGER.warning("CD 0x58 with no params")
+            return None
     elif command == ResponseType.DISC_TEXT_CONTINUATION and len(params) >= 17:
         return _decode_disc_text_continuation(command, data, params)
     elif command == ResponseType.TRACK_TEXT_FIRST and len(params) >= 15:

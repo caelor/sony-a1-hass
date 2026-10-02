@@ -553,3 +553,35 @@ class TestDecodeMessage:
         msg = decode_message(address_info, data, codec)
         assert isinstance(msg, DiscTextFirstBlockMessage)
         assert msg.disc_number == 10  # Hex codec, so 0x0A = 10
+
+    def test_disc_loaded_md_short_params_returns_none(self):
+        """Test that MD 0x58 with fewer than 15 params returns None."""
+        from custom_components.sony_a1_bus.protocol.decoder import AddressInfo
+
+        address_info = AddressInfo(
+            device_type=DeviceType.MD_RECORDER,
+            sub_index=0,
+            direction_from_device=True,
+            canonical_address=0xB0,
+        )
+        data = bytes([0xB8, 0x58, 0x01, 0x00, 0x00]) + b"\x00" * 4
+        codec = HexCodec()
+
+        msg = decode_message(address_info, data, codec)
+        assert msg is None
+
+    def test_disc_loaded_cd_no_params_returns_none(self):
+        """Test that CD 0x58 with no params returns None."""
+        from custom_components.sony_a1_bus.protocol.decoder import AddressInfo
+
+        address_info = AddressInfo(
+            device_type=DeviceType.CD_PLAYER,
+            sub_index=0,
+            direction_from_device=True,
+            canonical_address=0x90,
+        )
+        data = bytes([0x98, 0x58])
+        codec = BCDCodec()
+
+        msg = decode_message(address_info, data, codec)
+        assert msg is None

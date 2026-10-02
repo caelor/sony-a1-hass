@@ -36,6 +36,7 @@ from .const import (
     EVENT_SONY_A1_BUS_RX,
     INTER_MESSAGE_DELAY_S,
     SERVICE_DATA,
+    STATUS_QUERY_DELAY_S,
     SERVICE_SET_MUSICBRAINZ_ID,
     BridgeData,
     DeviceType,
@@ -274,10 +275,10 @@ async def _async_query_known_devices(
         if player.media_player is None:
             await _async_create_entities_for_player(hass, entry, player)
         
-        # Send query_status with 100ms delay
+        # Send query_status with delay between queries
         _LOGGER.debug("Sending query_status to %s", player.name)
         await player.async_query_status()
-        await asyncio.sleep(0.1)  # 100ms delay between queries
+        await asyncio.sleep(STATUS_QUERY_DELAY_S)
 
 
 def _ensure_toc_callback_set(
