@@ -25,6 +25,7 @@ from ..const import (
     TocState,
     TransportState,
 )
+from ..bus_gate import MessagePriority
 from ..external_metadata.models import ExternalMetadata
 from ..protocol import (
     Codec,
@@ -142,7 +143,7 @@ class Player:
         self.binary_sensors: list[BinarySensorEntity] = []
 
         # Callback for sending commands (set by device registry)
-        self._send_command_callback: Callable[[bytes, int], Awaitable[bool]] | None = None
+        self._send_command_callback: Callable[[bytes, int, MessagePriority], Awaitable[bool]] | None = None
         # Callback for updating device name in registry (set by media player)
         self._update_device_name_callback: Callable[[str], None] | None = None
 
@@ -224,17 +225,17 @@ class Player:
 
         self._toc_retry_count += 1
         _LOGGER.debug(
-            "TOC retry %d/%d for %s",
+            "TOC retry %d/%d for %s - resuming from last query",
             self._toc_retry_count,
             TOC_MAX_RETRIES,
             self.name,
         )
-        encoded_disc = self.codec.encode_byte(self.current_disc)
-        asyncio.ensure_future(
-            self.async_send_command(
-                bytes([CommandType.QUERY_DISC, encoded_disc])
-            )
-        )
+        
+        # Resume from next unqueried track instead of restarting
+        responses = self._progress_toc()
+        for cmd in responses:
+            asyncio.ensure_future(self.async_send_command(cmd))
+        
         self._start_toc_timer()
 
     async def async_refresh_toc(self) -> bool:
@@ -618,12 +619,18 @@ class Player:
         for binary_sensor in self.binary_sensors:
             binary_sensor.async_write_ha_state()
 
-    async def async_send_command(self, data: bytes, max_retries: int = 0) -> bool:
+    async def async_send_command(
+        self,
+        data: bytes,
+        max_retries: int = 0,
+        priority: MessagePriority = MessagePriority.NORMAL,
+    ) -> bool:
         """Send a command to this device via the bridge.
 
         Args:
             data: Raw command bytes (without address byte)
             max_retries: Number of retries if command fails (0 = no retry)
+            priority: Message priority level (NORMAL or HIGH)
 
         Returns:
             True if command sent successfully, False otherwise
@@ -637,7 +644,7 @@ class Player:
 
         # Prepend the device's "to" address
         full_data = bytes([self.canonical_address]) + data
-        return await self._send_command_callback(full_data, max_retries)
+        return await self._send_command_callback(full_data, max_retries, priority)
 
     async def async_query_status(self) -> bool:
         """Send 0x0F query status command to device.
@@ -655,7 +662,10 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.CMD_PLAY]))
+        return await self.async_send_command(
+            bytes([CommandType.CMD_PLAY]),
+            priority=MessagePriority.HIGH,
+        )
 
     async def async_pause(self) -> bool:
         """Send pause command to device.
@@ -663,7 +673,10 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.CMD_PAUSE]))
+        return await self.async_send_command(
+            bytes([CommandType.CMD_PAUSE]),
+            priority=MessagePriority.HIGH,
+        )
 
     async def async_stop(self) -> bool:
         """Send stop command to device.
@@ -671,7 +684,10 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.CMD_STOP]))
+        return await self.async_send_command(
+            bytes([CommandType.CMD_STOP]),
+            priority=MessagePriority.HIGH,
+        )
 
     async def async_next_track(self) -> bool:
         """Send next track command to device.
@@ -679,7 +695,10 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.CMD_SKIP_NEXT]))
+        return await self.async_send_command(
+            bytes([CommandType.CMD_SKIP_NEXT]),
+            priority=MessagePriority.HIGH,
+        )
 
     async def async_previous_track(self) -> bool:
         """Send previous track command to device.
@@ -687,7 +706,10 @@ class Player:
         Returns:
             True if command sent successfully, False otherwise
         """
-        return await self.async_send_command(bytes([CommandType.CMD_SKIP_PREVIOUS]))
+        return await self.async_send_command(
+            bytes([CommandType.CMD_SKIP_PREVIOUS]),
+            priority=MessagePriority.HIGH,
+        )
 
     async def async_query_disc(self, disc_number: int = 1) -> bool:
         """Send 0x44 query disc command to device.
@@ -706,12 +728,12 @@ class Player:
 
 
 
-    def set_send_callback(self, callback: Callable[[bytes, int], Awaitable[bool]]) -> None:
+    def set_send_callback(self, callback: Callable[[bytes, int, MessagePriority], Awaitable[bool]]) -> None:
         """Set the callback for sending commands to the bus.
 
         Args:
-            callback: Async function that takes raw bytes and max_retries, sends them to the bus,
-                     returning True on success, False on failure
+            callback: Async function that takes raw bytes, max_retries, and priority,
+                     sends them to the bus, returning True on success, False on failure
         """
         self._send_command_callback = callback
 

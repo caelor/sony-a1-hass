@@ -41,6 +41,7 @@ from .const import (
     DeviceType,
     get_retry_count_for_command,
 )
+from .bus_gate import BusTransmissionGate, MessagePriority
 from .coordinator import MetadataCoordinator
 from .devices import DeviceRegistry, Player
 from .protocol import decode_address, decode_message, get_codec_for_device_type
@@ -169,6 +170,7 @@ async def _async_ensure_bridge_exists(
         "truncated": False,
         "sensor": None,
         "bridge_version": "unknown",
+        "gate": BusTransmissionGate(),
     }
     bridges[esphome_device_id] = bridge
     
@@ -216,9 +218,16 @@ async def _async_query_known_devices(
         )
         
         # Create send callback for this bridge
-        async def _send_to_bridge(data: bytes, max_retries: int = 0) -> bool:
+        async def _send_to_bridge(
+            data: bytes,
+            max_retries: int = 0,
+            priority: MessagePriority = MessagePriority.NORMAL,
+        ) -> bool:
             """Send data to the bus via this bridge."""
             try:
+                # Wait for bus silence before transmitting
+                await bridge["gate"].wait_for_silence(priority)
+                
                 service_name = f"{bridge['node']}_{ESPHOME_SERVICE_TRANSMIT}"
                 await hass.services.async_call(
                     ESPHOME_DOMAIN,
@@ -401,9 +410,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             
             # Create send callback for this bridge
-            async def _send_to_bridge(data: bytes, max_retries: int = 0) -> bool:
+            async def _send_to_bridge(
+                data: bytes,
+                max_retries: int = 0,
+                priority: MessagePriority = MessagePriority.NORMAL,
+            ) -> bool:
                 """Send data to the bus via this bridge."""
                 try:
+                    # Wait for bus silence before transmitting
+                    await bridge["gate"].wait_for_silence(priority)
+                    
                     service_name = f"{bridge['node']}_{ESPHOME_SERVICE_TRANSMIT}"
                     await hass.services.async_call(
                         ESPHOME_DOMAIN,
@@ -459,6 +475,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bridge_was_created, bridge = await _async_ensure_bridge_exists(
             hass, entry, node_name, device_id
         )
+        
+        # Record RX for bus silence gate
+        bridge["gate"].record_rx()
         
         bridge["last_message"] = hex_data
         bridge["truncated"] = truncated

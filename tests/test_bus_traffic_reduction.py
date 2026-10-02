@@ -1,10 +1,11 @@
-"""Tests for bus traffic reduction features (Issues 1.1, 1.2, 1.3, 2.1)."""
+"""Tests for bus traffic reduction features (Issues 1.1, 1.2, 1.3, 2.1, 2.2)."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.sony_a1_bus.bus_gate import MessagePriority
 from custom_components.sony_a1_bus.const import (
     INTER_MESSAGE_DELAY_S,
     RETRY_COUNT_STATUS_QUERY,
@@ -74,7 +75,7 @@ class TestAsyncSendCommandRetries:
 
         captured_retries = None
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
             nonlocal captured_retries
             captured_retries = max_retries
             return True
@@ -92,7 +93,7 @@ class TestAsyncSendCommandRetries:
 
         captured_retries = None
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
             nonlocal captured_retries
             captured_retries = max_retries
             return True
@@ -110,7 +111,7 @@ class TestAsyncSendCommandRetries:
 
         captured_retries = None
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
             nonlocal captured_retries
             captured_retries = max_retries
             return True
@@ -129,3 +130,133 @@ class TestInterMessageDelay:
         from custom_components.sony_a1_bus.const import INTER_MESSAGE_DELAY_S
 
         assert INTER_MESSAGE_DELAY_S == 0.02
+
+
+class TestMessagePriority:
+    """Tests for message priority in async_send_command."""
+
+    async def test_play_uses_high_priority(self):
+        """async_play should pass HIGH priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_play()
+
+        assert captured_priority == MessagePriority.HIGH
+
+    async def test_stop_uses_high_priority(self):
+        """async_stop should pass HIGH priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_stop()
+
+        assert captured_priority == MessagePriority.HIGH
+
+    async def test_pause_uses_high_priority(self):
+        """async_pause should pass HIGH priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_pause()
+
+        assert captured_priority == MessagePriority.HIGH
+
+    async def test_next_track_uses_high_priority(self):
+        """async_next_track should pass HIGH priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_next_track()
+
+        assert captured_priority == MessagePriority.HIGH
+
+    async def test_previous_track_uses_high_priority(self):
+        """async_previous_track should pass HIGH priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_previous_track()
+
+        assert captured_priority == MessagePriority.HIGH
+
+    async def test_query_status_uses_normal_priority(self):
+        """async_query_status should pass NORMAL priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_query_status()
+
+        assert captured_priority == MessagePriority.NORMAL
+
+    async def test_query_disc_uses_normal_priority(self):
+        """async_query_disc should pass NORMAL priority to callback."""
+        player = CDPlayer(
+            sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock()
+        )
+
+        captured_priority = None
+
+        async def mock_callback(data: bytes, max_retries: int, priority: MessagePriority) -> bool:
+            nonlocal captured_priority
+            captured_priority = priority
+            return True
+
+        player.set_send_callback(mock_callback)
+        await player.async_query_disc()
+
+        assert captured_priority == MessagePriority.NORMAL

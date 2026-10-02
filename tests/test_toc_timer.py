@@ -1,11 +1,13 @@
 """Tests for TOC timer reset behavior."""
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from homeassistant.core import HomeAssistant
 
 from custom_components.sony_a1_bus.devices.md_player import MDPlayer
-from custom_components.sony_a1_bus.const import TocState
+from custom_components.sony_a1_bus.devices.cd_player import CDPlayer
+from custom_components.sony_a1_bus.const import TocState, TOC_MAX_RETRIES
 from custom_components.sony_a1_bus.protocol import (
     DiscInfoMessage,
     TrackInfoMessage,
@@ -479,3 +481,244 @@ class TestUnavailableResponse:
         responses = md_player.handle_message(unavailable)
         
         assert len(responses) == 0
+class TestTOCResumeOnTimeout:
+    """Test that TOC timeout resumes from last query instead of restarting."""
+
+    async def test_timeout_resumes_from_last_track_cd(self, hass):
+        """Timeout should query next track, not entire disc (CD player)."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        
+        # Set up TOC with 5 tracks, first 2 have lengths
+        player.toc = [
+            {"length_min": 3, "length_sec": 30, "length": 210},
+            {"length_min": 4, "length_sec": 15, "length": 255},
+            {"length_min": 0, "length_sec": 0, "length": 0},
+            {"length_min": 0, "length_sec": 0, "length": 0},
+            {"length_min": 0, "length_sec": 0, "length": 0},
+        ]
+        player.track_count = 5
+        player._set_toc_state(TocState.LOADING)
+        
+        # Capture commands sent
+        commands_sent = []
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            commands_sent.append(data)
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        # Trigger timeout
+        player._on_toc_timeout()
+        
+        # Wait for async tasks to complete
+        await asyncio.sleep(0.01)
+        
+        # Clean up timer
+        player._cancel_toc_timer()
+        
+        # Should query track 3 (0x45), not entire disc (0x44)
+        assert len(commands_sent) == 1
+        cmd = commands_sent[0]
+        assert cmd[0] == 0x90  # CD address (type 0x90 | sub_index 0)
+        assert cmd[1] == 0x45  # QUERY_TRACK
+        # Track 3 should be BCD encoded as 0x03
+
+    async def test_timeout_resumes_from_last_track_md(self, hass):
+        """Timeout should query next track, not entire disc (MD player)."""
+        player = MDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        
+        # Set up TOC with 3 tracks, first 2 have lengths
+        player.toc = [
+            {"length_min": 3, "length_sec": 30, "length": 210},
+            {"length_min": 4, "length_sec": 15, "length": 255},
+            {"length_min": 0, "length_sec": 0, "length": 0},
+        ]
+        player.track_count = 3
+        player._set_toc_state(TocState.LOADING)
+        
+        # Capture commands sent
+        commands_sent = []
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            commands_sent.append(data)
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        # Trigger timeout
+        player._on_toc_timeout()
+        
+        # Wait for async tasks to complete
+        await asyncio.sleep(0.01)
+        
+        # Clean up timer
+        player._cancel_toc_timer()
+        
+        # Should query track 3 (0x45), not entire disc (0x44)
+        assert len(commands_sent) == 1
+        cmd = commands_sent[0]
+        assert cmd[0] == 0xB0  # MD address (type 0xB0 | sub_index 0)
+        assert cmd[1] == 0x45  # QUERY_TRACK
+        assert cmd[3] == 0x03  # Track 3 (hex encoded for MD)
+
+    async def test_timeout_with_complete_toc_no_commands(self, hass):
+        """Timeout should send no commands if TOC is complete."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        
+        # Set up complete TOC
+        player.toc = [
+            {"length_min": 3, "length_sec": 30, "length": 210},
+            {"length_min": 4, "length_sec": 15, "length": 255},
+        ]
+        player.track_count = 2
+        player.device_capabilities = 0xFF
+        player.device_name = "Test CD"
+        player._set_toc_state(TocState.LOADING)
+        
+        # Capture commands sent
+        commands_sent = []
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            commands_sent.append(data)
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        # Trigger timeout
+        player._on_toc_timeout()
+        
+        # Wait for async tasks to complete
+        await asyncio.sleep(0.01)
+        
+        # Clean up timer
+        player._cancel_toc_timer()
+        
+        # Should send no commands (TOC complete)
+        assert len(commands_sent) == 0
+
+    async def test_timeout_increments_retry_count(self, hass):
+        """Timeout should increment retry counter."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        player.toc = [{"length_min": 0, "length_sec": 0, "length": 0}]
+        player.track_count = 1
+        player._set_toc_state(TocState.LOADING)
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        initial_count = player._toc_retry_count
+        player._on_toc_timeout()
+        
+        # Clean up timer
+        player._cancel_toc_timer()
+        
+        assert player._toc_retry_count == initial_count + 1
+
+    def test_timeout_sets_incomplete_after_max_retries(self, hass):
+        """Timeout should set INCOMPLETE state after max retries."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        player.toc = [{"length_min": 0, "length_sec": 0, "length": 0}]
+        player.track_count = 1
+        player._set_toc_state(TocState.LOADING)
+        player._toc_retry_count = TOC_MAX_RETRIES
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        player._on_toc_timeout()
+        
+        assert player._toc_state == TocState.INCOMPLETE
+
+    def test_timeout_no_action_when_disc_not_loaded(self, hass):
+        """Timeout should do nothing if disc is not loaded."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = False
+        player._set_toc_state(TocState.LOADING)
+        
+        commands_sent = []
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            commands_sent.append(data)
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        player._on_toc_timeout()
+        
+        assert len(commands_sent) == 0
+        assert player._toc_retry_count == 0
+
+    async def test_timeout_logs_resume_message(self, hass, caplog):
+        """Timeout should log that it's resuming from last query."""
+        player = CDPlayer(
+            sub_index=0,
+            bridge_node="test_bridge",
+            bridge_device_id="test_device",
+            hass=hass,
+        )
+        player.disc_loaded = True
+        player.current_disc = 1
+        player.toc = [{"length_min": 0, "length_sec": 0, "length": 0}]
+        player.track_count = 1
+        player._set_toc_state(TocState.LOADING)
+        
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
+            return True
+        
+        player.set_send_callback(mock_callback)
+        
+        with caplog.at_level("DEBUG"):
+            player._on_toc_timeout()
+            
+            # Wait for async tasks to complete
+            await asyncio.sleep(0.01)
+            
+            # Clean up timer
+            player._cancel_toc_timer()
+        
+        assert "resuming from last query" in caplog.text

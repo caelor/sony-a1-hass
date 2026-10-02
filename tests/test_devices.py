@@ -603,7 +603,7 @@ class TestPlayerSendCallback:
     async def test_send_command_with_callback_returns_true(self):
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             return True
 
         player.set_send_callback(mock_callback)
@@ -613,7 +613,7 @@ class TestPlayerSendCallback:
     async def test_send_command_with_callback_returns_false_on_failure(self):
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             return False
 
         player.set_send_callback(mock_callback)
@@ -623,7 +623,7 @@ class TestPlayerSendCallback:
     async def test_query_status_returns_callback_result(self):
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             # Verify the command is 0x0F
             assert data == bytes([0x90, 0x0F])  # Address + command
             return True
@@ -908,7 +908,7 @@ class TestAsyncQueryDisc:
         """Test that async_query_disc sends correct command for CD player."""
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             # Address (0x90) + command (0x44) + disc number (0x01 BCD)
             assert data == bytes([0x90, 0x44, 0x01])
             return True
@@ -921,7 +921,7 @@ class TestAsyncQueryDisc:
         """Test that async_query_disc sends correct command for MD player."""
         player = MDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             # Address (0xB0) + command (0x44) + disc number (0x0A hex = 10)
             assert data == bytes([0xB0, 0x44, 0x0A])
             return True
@@ -934,7 +934,7 @@ class TestAsyncQueryDisc:
         """Test that async_query_disc defaults to disc 1."""
         player = CDPlayer(sub_index=0, bridge_node="test", bridge_device_id="dev1", hass=MagicMock())
 
-        async def mock_callback(data: bytes, max_retries: int = 0) -> bool:
+        async def mock_callback(data: bytes, max_retries: int, priority) -> bool:
             assert data == bytes([0x90, 0x44, 0x01])
             return True
 
@@ -1434,7 +1434,7 @@ class TestTocState:
         mock_timer.cancel.assert_called()
 
     def test_timeout_triggers_retry(self):
-        """Test that timeout triggers a disc re-query."""
+        """Test that timeout triggers a track re-query."""
         from custom_components.sony_a1_bus.const import TocState
 
         mock_hass = MagicMock()
@@ -1445,6 +1445,9 @@ class TestTocState:
         player.disc_loaded = True
         player._toc_state = TocState.LOADING
         player._toc_retry_count = 0
+        # Set up incomplete TOC so _progress_toc returns a command
+        player.toc = [{"length_min": 0, "length_sec": 0, "length": 0}]
+        player.track_count = 1
 
         # Simulate send callback
         send_mock = AsyncMock(return_value=True)

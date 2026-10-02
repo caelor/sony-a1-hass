@@ -4,6 +4,7 @@ from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
+    from .bus_gate import BusTransmissionGate
     from .sensor import SonyA1BusLastMessageSensor
 
 DOMAIN = "sony_a1_bus"
@@ -129,6 +130,10 @@ TOC_MAX_RETRIES = 3
 
 INTER_MESSAGE_DELAY_S = 0.02
 
+# Bus silence thresholds for transmission gate
+BUS_SILENCE_NORMAL_SEC = 0.2      # 200ms for normal priority
+BUS_SILENCE_HIGH_SEC = 0.05       # 50ms for high priority
+
 RETRY_COUNT_STATUS_QUERY = 1
 RETRY_COUNT_TOC_QUERY = 2
 
@@ -168,3 +173,4 @@ class BridgeData(TypedDict):
     truncated: bool
     sensor: "SonyA1BusLastMessageSensor | None"
     bridge_version: str
+    gate: "BusTransmissionGate"
