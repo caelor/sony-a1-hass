@@ -99,6 +99,8 @@ class Player:
         self.total_seconds: int = 0
         self.track_duration_minutes: int = 0
         self.track_duration_seconds: int = 0
+        self.current_minutes: int = 0
+        self.current_seconds: int = 0
         self.device_name: str | None = None
         self.device_capabilities: int | None = None
         self.disc_count: int = 1
@@ -181,7 +183,14 @@ class Player:
         """Update the TOC state and notify listeners."""
         if self._toc_state == state:
             return
+        old_state = self._toc_state
         self._toc_state = state
+        _LOGGER.debug(
+            "%s: TOC state %s -> %s",
+            self.name,
+            old_state.value,
+            state.value,
+        )
         for listener in self._toc_state_listeners:
             listener()
 
@@ -336,15 +345,24 @@ class Player:
 
     def _handle_power_message(self, message: PowerMessage) -> list[bytes]:
         """Handle power on/off message."""
+        old_power = self.power_on
         self.power_on = message.power_on
+        if old_power != self.power_on:
+            _LOGGER.info(
+                "%s: power %s",
+                self.name,
+                "on" if self.power_on else "off",
+            )
         if not message.power_on:
             self.transport_state = TransportState.STOPPED
+            self.time_estimator.stop()
         return []
 
     def _handle_transport_message(self, message: TransportMessage) -> list[bytes]:
         """Handle transport state message (play, stop, pause)."""
         self.power_on = True  # Device sending messages must be on
 
+        old_state = self.transport_state
         if message.command == ResponseType.PLAYING:
             self.transport_state = TransportState.PLAYING
             self.time_estimator.play()
@@ -354,6 +372,14 @@ class Player:
         elif message.command == ResponseType.PAUSED:
             self.transport_state = TransportState.PAUSED
             self.time_estimator.pause()
+
+        if old_state != self.transport_state:
+            _LOGGER.info(
+                "%s: transport %s -> %s",
+                self.name,
+                old_state.name,
+                self.transport_state.name,
+            )
 
         return []
 
@@ -460,6 +486,13 @@ class Player:
 
     def _handle_track_change_message(self, message: TrackChangeMessage) -> list[bytes]:
         """Handle 0x50 track change message (track duration)."""
+        if not self.disc_loaded:
+            _LOGGER.debug(
+                "Ignoring track change for %s - disc not loaded",
+                self.name,
+            )
+            return []
+
         self.current_disc = message.disc_number
         self.current_track = message.track_number
         self.track_duration_minutes = message.minutes
@@ -481,6 +514,13 @@ class Player:
 
     def _handle_time_update_message(self, message: TimeUpdateMessage) -> list[bytes]:
         """Handle 0x51 time update message."""
+        if not self.disc_loaded:
+            _LOGGER.debug(
+                "Ignoring time update for %s - disc not loaded",
+                self.name,
+            )
+            return []
+
         self.current_track = message.track_number
         if message.disc_number is not None:
             self.current_disc = message.disc_number
@@ -536,6 +576,14 @@ class Player:
         """
         was_loaded = self.disc_loaded
         self.disc_loaded = loaded
+
+        if was_loaded != loaded:
+            _LOGGER.info(
+                "%s: disc %s (disc %d)",
+                self.name,
+                "loaded" if loaded else "unloaded",
+                disc_number if loaded else 0,
+            )
 
         if not loaded:
             self._cancel_toc_timer()
@@ -600,8 +648,12 @@ class Player:
         """Handle 0x08 device ready message.
         Assumption: disc_number=01 (no DD field identified in 0x08 params).
         """
-        _LOGGER.debug("0x08 message assuming disc_number is 1 for follow-on disc query for %s", self.name)
-        return self._set_disc_loaded(True, disc_number=1)
+        if not self.disc_loaded:
+            _LOGGER.debug("0x08 message assuming disc_number is 1 for follow-on disc query for %s", self.name)
+            return self._set_disc_loaded(True, disc_number=1)
+
+        _LOGGER.debug("0x08 message for %s - disc already loaded, no action", self.name)
+        return []
 
     def _handle_device_specific_message(self, message: Message) -> tuple[bool, list[bytes]]:
         """Handle device-specific messages.
